@@ -436,6 +436,18 @@
   .theme-btn:hover{ transform: translateY(-1px); background: rgba(255,255,255,0.08); }
   body.light-mode .theme-btn{ color: var(--ink); }
 
+  /* ---------- Cartel de sin conexión ---------- */
+  .offline-banner{
+    background: #4A3410; color: #F4B63F; font-size:13px; text-align:center;
+    padding:10px 16px; display:flex; align-items:center; justify-content:center;
+    gap:12px; flex-wrap:wrap;
+  }
+  .offline-banner button{
+    background: var(--yellow); color: #20221F; border:none; border-radius:999px;
+    padding:5px 14px; font-size:12.5px; font-weight:700; cursor:pointer; font-family:'Inter',sans-serif;
+  }
+  body.light-mode .offline-banner{ background:#FCEFD2; color:#8A5E10; }
+
   /* ---------- Filtros (orden / stock / contador) ---------- */
   .filters-row{
     display:flex; align-items:center; gap:16px; flex-wrap:wrap;
@@ -554,6 +566,11 @@
     </div>
   </div>
 </header>
+
+<div class="offline-banner" id="offlineBanner" style="display:none;">
+  📡 Sin conexión a internet — estás viendo los últimos precios guardados en este dispositivo.
+  <button id="retryBtn">Reintentar</button>
+</div>
 
 <div class="hero" id="hero">
   <h2>Elegí, sumá al<br><span>carrito</span> y listo.</h2>
@@ -871,7 +888,10 @@ function saveOverrideLocal(id, data){
 function subscribeToCloudOverrides(){
   if (!firebaseReady) return;
   db.collection("overrides").onSnapshot(snapshot => {
-    snapshot.forEach(doc => applyOverride(doc.id, doc.data()));
+    snapshot.forEach(doc => {
+      applyOverride(doc.id, doc.data());
+      saveOverrideLocal(doc.id, doc.data()); // cache: para que ande sin internet
+    });
     renderCategoryChips();
     renderGrid();
     if (location.hash === "#/admin" && typeof renderAdmin === "function") renderAdmin();
@@ -887,6 +907,122 @@ function savePriceAndStock(id, data){
   if (firebaseReady){
     db.collection("overrides").doc(String(id)).set(data, { merge: true })
       .catch(err => console.warn("No se pudo guardar en la nube", err));
+  }
+}
+
+/* =========================================================
+   Alta de productos nuevos desde /admin
+   =========================================================
+   Se guardan siempre en este navegador (respaldo instantáneo) y,
+   si Firebase está configurado, también en la nube — así aparecen
+   en la tienda de cualquier visitante, no solo en la tuya. */
+const EXTRA_PRODUCTS_KEY = "nodo_extra_products_v1";
+const knownProductIds = new Set(PRODUCTS.map(p => p.id));
+
+function addProductLocally(product){
+  if (knownProductIds.has(product.id)) return; // ya lo tenemos (evita duplicados)
+  knownProductIds.add(product.id);
+  PRODUCTS.push(product);
+}
+
+// Respaldo local: si Firebase todavía no está configurado (o mientras
+// carga), esto pinta los productos agregados desde este navegador.
+(function loadLocalExtraProducts(){
+  try{
+    const raw = localStorage.getItem(EXTRA_PRODUCTS_KEY);
+    if (!raw) return;
+    const extra = JSON.parse(raw);
+    if (Array.isArray(extra)) extra.forEach(addProductLocally);
+  } catch(e){ console.warn("No se pudieron leer los productos guardados", e); }
+})();
+
+function saveExtraProductLocal(product){
+  let list = [];
+  try{
+    list = JSON.parse(localStorage.getItem(EXTRA_PRODUCTS_KEY) || "[]");
+  } catch(e){ list = []; }
+  list.push(product);
+  try{
+    localStorage.setItem(EXTRA_PRODUCTS_KEY, JSON.stringify(list));
+  } catch(e){ console.warn("No se pudo guardar el producto nuevo", e); }
+}
+
+// Escucha productos nuevos que se agreguen desde /admin en CUALQUIER
+// dispositivo, y los suma acá al catálogo automáticamente.
+function subscribeToCloudProducts(){
+  if (!firebaseReady) return;
+  db.collection("products").onSnapshot(snapshot => {
+    let changed = false;
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      const id = Number(doc.id);
+      if (!knownProductIds.has(id)){
+        const product = { ...data, id };
+        addProductLocally(product);
+        saveExtraProductLocal(product); // cache: para que ande sin internet
+        changed = true;
+      }
+    });
+    if (changed){
+      renderCategoryChips();
+      renderGrid();
+    }
+  }, err => console.warn("Firebase no pudo sincronizar productos", err));
+}
+
+// Redimensiona y comprime una foto antes de guardarla, para que el
+// catálogo cargue rápido y quepa dentro del límite de Firestore (1 MB
+// por producto).
+function compressImageFile(file, maxSize = 900, quality = 0.7){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxSize || height > maxSize){
+          if (width >= height){
+            height = Math.round(height * (maxSize / width));
+            width = maxSize;
+          } else {
+            width = Math.round(width * (maxSize / height));
+            height = maxSize;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// Guarda un producto nuevo: local siempre, y en la nube si está
+// configurado. Devuelve { ok, error } para que el formulario avise.
+async function saveNewProduct(product){
+  addProductLocally(product);
+  saveExtraProductLocal(product);
+  renderCategoryChips();
+  renderGrid();
+
+  if (!firebaseReady) return { ok: true, cloud: false };
+
+  const size = new Blob([JSON.stringify(product)]).size;
+  if (size > 900000){
+    return { ok: true, cloud: false, error: "Se guardó en este navegador, pero es demasiado pesado para la nube (usá menos fotos o más livianas para que se vea en todos lados)." };
+  }
+  try{
+    await db.collection("products").doc(String(product.id)).set(product);
+    return { ok: true, cloud: true };
+  } catch(err){
+    console.warn("No se pudo subir el producto a la nube", err);
+    return { ok: true, cloud: false, error: "Se guardó en este navegador, pero no se pudo subir a la nube. Revisá tu conexión y probá de nuevo." };
   }
 }
 
@@ -1313,6 +1449,18 @@ if (onlyStockChkEl){
   });
 }
 
+/* ---------- Cartel de sin conexión ---------- */
+const offlineBanner = document.getElementById("offlineBanner");
+function updateOfflineBanner(){
+  if (!offlineBanner) return;
+  offlineBanner.style.display = navigator.onLine ? "none" : "flex";
+}
+updateOfflineBanner();
+window.addEventListener("online", updateOfflineBanner);
+window.addEventListener("offline", updateOfflineBanner);
+const retryBtnEl = document.getElementById("retryBtn");
+if (retryBtnEl) retryBtnEl.addEventListener("click", () => location.reload());
+
 /* ---------- Modo día / noche ---------- */
 const themeBtn = document.getElementById("themeBtn");
 function applyTheme(theme){
@@ -1334,6 +1482,7 @@ themeBtn.addEventListener("click", () => {
 const adminView = document.getElementById("adminView");
 const adminWrap = document.getElementById("adminWrap");
 const ADMIN_AUTH_KEY = "nodo_admin_auth";
+let adminTab = "stock"; // "stock" | "add"
 
 function isAdminAuthed(){
   return sessionStorage.getItem(ADMIN_AUTH_KEY) === "yes";
@@ -1387,22 +1536,33 @@ function renderAdminPanel(){
     </div>
     <div class="admin-card">
       <h2>Admin — NODO</h2>
-      <p class="sub">Actualizá el precio y el stock de cada producto. Para agregar o sacar productos, se edita el código de la página.</p>
+      <p class="sub">Actualizá precio, stock, o agregá un producto nuevo.</p>
       ${firebaseReady
         ? `<p class="admin-success" style="margin-bottom:16px;">🌎 Conectado — los cambios se ven en todos los dispositivos.</p>`
-        : `<p class="admin-error" style="margin-bottom:16px;">⚠️ Todavía no conectaste la base de datos: estos cambios solo se guardan en este navegador. Pedile a quien te armó la página que active la sincronización (Firebase) para que se vean en todos lados.</p>`
+        : `<p class="admin-error" style="margin-bottom:16px;">⚠️ Todavía no conectaste la base de datos: estos cambios solo se guardan en este navegador.</p>`
       }
-      <div id="adminStockList"></div>
-      <p class="admin-success" id="adminStockMsg" style="display:none;">Guardado ✔</p>
+      <div class="admin-tabs">
+        <button class="admin-tab ${adminTab === "stock" ? "active" : ""}" id="tabStockBtn">Precio y stock</button>
+        <button class="admin-tab ${adminTab === "add" ? "active" : ""}" id="tabAddBtn">Agregar producto</button>
+      </div>
+      <div id="adminTabContent"></div>
     </div>
   `;
   document.getElementById("adminLogoutBtn").addEventListener("click", adminLogout);
-  renderAdminStockTab();
+  document.getElementById("tabStockBtn").addEventListener("click", () => { adminTab = "stock"; renderAdminPanel(); });
+  document.getElementById("tabAddBtn").addEventListener("click", () => { adminTab = "add"; renderAdminPanel(); });
+
+  if (adminTab === "add") renderAdminAddTab();
+  else renderAdminStockTab();
 }
 
 function renderAdminStockTab(){
+  const content = document.getElementById("adminTabContent");
+  content.innerHTML = `
+    <div id="adminStockList"></div>
+    <p class="admin-success" id="adminStockMsg" style="display:none;">Guardado ✔</p>
+  `;
   const list = document.getElementById("adminStockList");
-  if (!list) return;
   list.innerHTML = PRODUCTS.map(p => `
     <div class="admin-product-row" data-id="${p.id}">
       ${p.image ? `<img src="${p.image}" alt="${p.name}">` : `<div class="ph"></div>`}
@@ -1436,10 +1596,159 @@ function renderAdminStockTab(){
   });
 }
 
+function renderAdminAddTab(){
+  const content = document.getElementById("adminTabContent");
+  content.innerHTML = `
+    <form id="addProductForm">
+      <div class="admin-field">
+        <label>Fotos (de 1 a 10)</label>
+        <input type="file" id="photosInput" accept="image/*" multiple>
+        <div class="photo-preview-strip" id="photoPreview"></div>
+      </div>
+      <div class="admin-field">
+        <label for="pName">Nombre del producto</label>
+        <input type="text" id="pName" required>
+      </div>
+      <div class="admin-field">
+        <label for="pCategory">Categoría</label>
+        <input type="text" id="pCategory" placeholder="Ej: Electrónica">
+      </div>
+      <div class="admin-field">
+        <label for="pPrice">Precio (solo números)</label>
+        <input type="number" id="pPrice" min="0" required>
+      </div>
+      <div class="admin-field">
+        <label for="pStock">Stock inicial</label>
+        <input type="number" id="pStock" min="0" value="10" required>
+      </div>
+      <div class="admin-field">
+        <label for="pDesc">Descripción corta</label>
+        <textarea id="pDesc"></textarea>
+      </div>
+      <div class="admin-field">
+        <label>Especificaciones (opcional)</label>
+        <div id="specsRows"></div>
+        <button type="button" class="admin-btn secondary" id="addSpecBtn" style="margin-top:4px;">+ Agregar especificación</button>
+      </div>
+      <p class="admin-error" id="addProductError" style="display:none;"></p>
+      <p class="admin-success" id="addProductMsg" style="display:none;"></p>
+      <div style="margin-top:16px;">
+        <button class="admin-btn" type="submit" id="addProductSubmitBtn">Agregar producto</button>
+      </div>
+    </form>
+  `;
+
+  let selectedPhotos = []; // base64 ya comprimidas
+
+  const photosInput = document.getElementById("photosInput");
+  const photoPreview = document.getElementById("photoPreview");
+  const errorEl = document.getElementById("addProductError");
+  const msgEl = document.getElementById("addProductMsg");
+  const submitBtn = document.getElementById("addProductSubmitBtn");
+
+  photosInput.addEventListener("change", async () => {
+    const files = Array.from(photosInput.files).slice(0, 10);
+    errorEl.style.display = "none";
+    if (photosInput.files.length > 10){
+      errorEl.textContent = "Máximo 10 fotos. Se tomaron las primeras 10.";
+      errorEl.style.display = "block";
+    }
+    photoPreview.innerHTML = `<span style="font-size:12px;color:#9aa8a1;">Procesando fotos...</span>`;
+    try{
+      selectedPhotos = await Promise.all(files.map(f => compressImageFile(f)));
+      photoPreview.innerHTML = selectedPhotos.map(src => `<img src="${src}">`).join("");
+    } catch(e){
+      errorEl.textContent = "No se pudieron procesar una o más fotos. Probá con otras.";
+      errorEl.style.display = "block";
+      photoPreview.innerHTML = "";
+    }
+  });
+
+  const specsRows = document.getElementById("specsRows");
+  function addSpecRow(){
+    const row = document.createElement("div");
+    row.className = "specs-row";
+    row.innerHTML = `
+      <input type="text" class="spec-label" placeholder="Ej: Batería">
+      <input type="text" class="spec-value" placeholder="Ej: 300 mAh">
+      <button type="button" title="Quitar">✕</button>
+    `;
+    row.querySelector("button").addEventListener("click", () => row.remove());
+    specsRows.appendChild(row);
+  }
+  document.getElementById("addSpecBtn").addEventListener("click", addSpecRow);
+  addSpecRow();
+
+  document.getElementById("addProductForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    errorEl.style.display = "none";
+    msgEl.style.display = "none";
+
+    const name = document.getElementById("pName").value.trim();
+    const category = document.getElementById("pCategory").value.trim();
+    const price = Math.max(0, parseInt(document.getElementById("pPrice").value, 10) || 0);
+    const stock = Math.max(0, parseInt(document.getElementById("pStock").value, 10) || 0);
+    const desc = document.getElementById("pDesc").value.trim();
+
+    if (!name || !price){
+      errorEl.textContent = "Completá al menos el nombre y el precio.";
+      errorEl.style.display = "block";
+      return;
+    }
+    if (selectedPhotos.length === 0){
+      errorEl.textContent = "Subí al menos 1 foto (hasta 10).";
+      errorEl.style.display = "block";
+      return;
+    }
+
+    const specs = Array.from(specsRows.querySelectorAll(".specs-row")).map(row => {
+      const label = row.querySelector(".spec-label").value.trim();
+      const value = row.querySelector(".spec-value").value.trim();
+      return [label, value];
+    }).filter(([label, value]) => label && value);
+
+    const newProduct = {
+      id: Date.now(),
+      name,
+      category,
+      desc,
+      price,
+      stock,
+      image: selectedPhotos[0],
+      gallery: selectedPhotos.slice(1),
+      specs,
+      art: `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><rect width="200" height="200" fill="#eee"/></svg>`,
+    };
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Guardando...";
+    const result = await saveNewProduct(newProduct);
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Agregar producto";
+
+    if (result.error){
+      errorEl.textContent = result.error;
+      errorEl.style.display = "block";
+    } else {
+      msgEl.textContent = result.cloud
+        ? "¡Producto agregado — ya se ve en todos lados! ✔"
+        : "¡Producto agregado en este navegador! ✔";
+      msgEl.style.display = "block";
+    }
+
+    document.getElementById("addProductForm").reset();
+    selectedPhotos = [];
+    photoPreview.innerHTML = "";
+    specsRows.innerHTML = "";
+    addSpecRow();
+  });
+}
+
 renderCategoryChips();
 renderGrid();
 updateCart();
 subscribeToCloudOverrides();
+subscribeToCloudProducts();
 route();
 </script>
 
