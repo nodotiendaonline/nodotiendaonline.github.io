@@ -533,6 +533,13 @@
     width:80px; text-align:center; border:1px solid rgba(22,36,31,0.2); border-radius:8px;
     padding:6px; font-family:'Space Mono',monospace; margin-top:2px; background:#fff; color: var(--ink);
   }
+  .del-btn{
+    background:none; border:1px solid rgba(226,83,43,0.4); color: var(--red);
+    border-radius:8px; padding:8px 12px; font-size:12.5px; cursor:pointer;
+    font-family:'Inter',sans-serif; flex-shrink:0;
+  }
+  .del-btn:hover{ background: rgba(226,83,43,0.1); }
+  .del-btn:disabled{ opacity:0.6; cursor:not-allowed; }
   .specs-row{ display:flex; gap:8px; margin-bottom:8px; }
   .specs-row input{ flex:1; }
   .specs-row button{
@@ -911,18 +918,25 @@ function savePriceAndStock(id, data){
 }
 
 /* =========================================================
-   Alta de productos nuevos desde /admin
+   Alta y baja de productos desde /admin
    =========================================================
    Se guardan siempre en este navegador (respaldo instantáneo) y,
    si Firebase está configurado, también en la nube — así aparecen
-   en la tienda de cualquier visitante, no solo en la tuya. */
+   (o desaparecen) en la tienda de cualquier visitante, no solo en
+   la tuya. */
 const EXTRA_PRODUCTS_KEY = "nodo_extra_products_v1";
+const DELETED_PRODUCTS_KEY = "nodo_deleted_products_v1";
 const knownProductIds = new Set(PRODUCTS.map(p => p.id));
 
 function addProductLocally(product){
   if (knownProductIds.has(product.id)) return; // ya lo tenemos (evita duplicados)
   knownProductIds.add(product.id);
   PRODUCTS.push(product);
+}
+
+function removeProductLocally(id){
+  const idx = PRODUCTS.findIndex(p => p.id === id);
+  if (idx > -1) PRODUCTS.splice(idx, 1);
 }
 
 // Respaldo local: si Firebase todavía no está configurado (o mientras
@@ -947,6 +961,34 @@ function saveExtraProductLocal(product){
   } catch(e){ console.warn("No se pudo guardar el producto nuevo", e); }
 }
 
+// Respaldo local de productos eliminados: se aplica ni bien carga la
+// página, para que un producto borrado no "reaparezca" en este navegador.
+function loadLocalDeletedIds(){
+  try{
+    return JSON.parse(localStorage.getItem(DELETED_PRODUCTS_KEY) || "[]");
+  } catch(e){ return []; }
+}
+loadLocalDeletedIds().forEach(removeProductLocally);
+
+function saveDeletedIdLocal(id){
+  const list = loadLocalDeletedIds();
+  if (!list.includes(id)) list.push(id);
+  try{
+    localStorage.setItem(DELETED_PRODUCTS_KEY, JSON.stringify(list));
+  } catch(e){ console.warn("No se pudo guardar la baja del producto", e); }
+}
+
+// Firestore no permite guardar "arrays dentro de arrays", así que las
+// especificaciones (que internamente son pares [nombre, valor]) se
+// convierten a {label, value} solo para mandarlas a la nube, y se
+// vuelven a convertir a pares al leerlas.
+function specsToCloudFormat(specs){
+  return (specs || []).map(([label, value]) => ({ label, value }));
+}
+function specsFromCloudFormat(specs){
+  return (specs || []).map(s => [s.label, s.value]);
+}
+
 // Escucha productos nuevos que se agreguen desde /admin en CUALQUIER
 // dispositivo, y los suma acá al catálogo automáticamente.
 function subscribeToCloudProducts(){
@@ -957,7 +999,7 @@ function subscribeToCloudProducts(){
       const data = doc.data();
       const id = Number(doc.id);
       if (!knownProductIds.has(id)){
-        const product = { ...data, id };
+        const product = { ...data, id, specs: specsFromCloudFormat(data.specs) };
         addProductLocally(product);
         saveExtraProductLocal(product); // cache: para que ande sin internet
         changed = true;
@@ -968,6 +1010,28 @@ function subscribeToCloudProducts(){
       renderGrid();
     }
   }, err => console.warn("Firebase no pudo sincronizar productos", err));
+}
+
+// Escucha bajas de productos hechas desde /admin en CUALQUIER
+// dispositivo, y los saca acá del catálogo automáticamente.
+function subscribeToCloudDeletions(){
+  if (!firebaseReady) return;
+  db.collection("deleted_products").onSnapshot(snapshot => {
+    let changed = false;
+    snapshot.forEach(doc => {
+      const id = Number(doc.id);
+      if (PRODUCTS.some(p => p.id === id)){
+        removeProductLocally(id);
+        changed = true;
+      }
+      saveDeletedIdLocal(id);
+    });
+    if (changed){
+      renderCategoryChips();
+      renderGrid();
+      if (location.hash === "#/admin" && typeof renderAdmin === "function") renderAdmin();
+    }
+  }, err => console.warn("Firebase no pudo sincronizar bajas de productos", err));
 }
 
 // Redimensiona y comprime una foto antes de guardarla, para que el
@@ -1013,16 +1077,48 @@ async function saveNewProduct(product){
 
   if (!firebaseReady) return { ok: true, cloud: false };
 
-  const size = new Blob([JSON.stringify(product)]).size;
+  const cloudProduct = { ...product, specs: specsToCloudFormat(product.specs) };
+  const size = new Blob([JSON.stringify(cloudProduct)]).size;
   if (size > 900000){
     return { ok: true, cloud: false, error: "Se guardó en este navegador, pero es demasiado pesado para la nube (usá menos fotos o más livianas para que se vea en todos lados)." };
   }
   try{
-    await db.collection("products").doc(String(product.id)).set(product);
+    await db.collection("products").doc(String(product.id)).set(cloudProduct);
     return { ok: true, cloud: true };
   } catch(err){
     console.warn("No se pudo subir el producto a la nube", err);
-    return { ok: true, cloud: false, error: "Se guardó en este navegador, pero no se pudo subir a la nube. Revisá tu conexión y probá de nuevo." };
+    return {
+      ok: true,
+      cloud: false,
+      error: `Se guardó en este navegador, pero no se pudo subir a la nube (${err.code || err.message || "error desconocido"}). Si el error dice "permission-denied", revisá las reglas de Firestore.`,
+    };
+  }
+}
+
+// Elimina un producto: local siempre, y en la nube si está configurado
+// (para que desaparezca de la tienda de todo el mundo).
+async function deleteProductEverywhere(id){
+  removeProductLocally(id);
+  saveDeletedIdLocal(id);
+  renderCategoryChips();
+  renderGrid();
+
+  if (!firebaseReady) return { ok: true, cloud: false };
+
+  try{
+    await Promise.all([
+      db.collection("products").doc(String(id)).delete(),
+      db.collection("deleted_products").doc(String(id)).set({ deletedAt: Date.now() }),
+      db.collection("overrides").doc(String(id)).delete().catch(() => {}),
+    ]);
+    return { ok: true, cloud: true };
+  } catch(err){
+    console.warn("No se pudo eliminar en la nube", err);
+    return {
+      ok: true,
+      cloud: false,
+      error: `Se eliminó en este navegador, pero no se pudo sincronizar con la nube (${err.code || err.message || "error desconocido"}).`,
+    };
   }
 }
 
@@ -1571,6 +1667,7 @@ function renderAdminStockTab(){
   content.innerHTML = `
     <div id="adminStockList"></div>
     <p class="admin-success" id="adminStockMsg" style="display:none;">Guardado ✔</p>
+    <p class="admin-error" id="adminDeleteMsg" style="display:none;"></p>
   `;
   const list = document.getElementById("adminStockList");
   list.innerHTML = PRODUCTS.map(p => `
@@ -1584,6 +1681,7 @@ function renderAdminStockTab(){
         <label>Precio<br><input type="number" min="0" class="price-input" value="${p.price}" data-id="${p.id}"></label>
         <label>Stock<br><input type="number" min="0" class="stock-input" value="${p.stock ?? 0}" data-id="${p.id}"></label>
       </div>
+      <button class="del-btn" data-id="${p.id}" data-name="${p.name}">Eliminar</button>
     </div>
   `).join("");
 
@@ -1603,6 +1701,28 @@ function renderAdminStockTab(){
 
   list.querySelectorAll(".price-input, .stock-input").forEach(inp => {
     inp.addEventListener("change", () => handleChange(Number(inp.dataset.id)));
+  });
+
+  list.querySelectorAll(".del-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = Number(btn.dataset.id);
+      const name = btn.dataset.name;
+      if (!confirm(`¿Eliminar "${name}" de la tienda? Esto se aplica para todos los visitantes.`)) return;
+
+      btn.disabled = true;
+      btn.textContent = "Eliminando...";
+      const result = await deleteProductEverywhere(id);
+      const deleteMsg = document.getElementById("adminDeleteMsg");
+      if (deleteMsg){
+        if (result.error){
+          deleteMsg.textContent = result.error;
+          deleteMsg.style.display = "block";
+        } else {
+          deleteMsg.style.display = "none";
+        }
+      }
+      renderAdminStockTab();
+    });
   });
 }
 
@@ -1759,6 +1879,7 @@ renderGrid();
 updateCart();
 subscribeToCloudOverrides();
 subscribeToCloudProducts();
+subscribeToCloudDeletions();
 route();
 </script>
 
