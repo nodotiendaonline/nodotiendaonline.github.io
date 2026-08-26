@@ -1456,6 +1456,16 @@ function updateOfflineBanner(){
   offlineBanner.style.display = navigator.onLine ? "none" : "flex";
 }
 updateOfflineBanner();
+
+/* ---------- PWA: registra el service worker para que la app
+   instalada pueda abrir sin internet ---------- */
+if ("serviceWorker" in navigator){
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(err => {
+      console.warn("No se pudo registrar el service worker (la PWA no va a andar sin internet)", err);
+    });
+  });
+}
 window.addEventListener("online", updateOfflineBanner);
 window.addEventListener("offline", updateOfflineBanner);
 const retryBtnEl = document.getElementById("retryBtn");
