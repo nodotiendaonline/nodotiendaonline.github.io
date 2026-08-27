@@ -396,6 +396,9 @@
   .specs-table td:first-child{
     color: var(--ink-soft); width:42%; padding-right:10px; font-weight:600;
   }
+  .detail-video{
+    width:100%; border-radius:14px; margin-top:10px; background:#000; display:block;
+  }
 
   @media (max-width: 620px){
     .detail-grid{ grid-template-columns: 1fr; }
@@ -854,6 +857,14 @@ if (isFirebaseConfigured() && window.firebase){
     firebaseReady = true;
   } catch(e){ console.warn("No se pudo iniciar Firebase", e); }
 }
+
+// Videos de unboxing: id del producto -> archivo de video (subilo a la
+// carpeta /videos/ de tu hosting, junto al index.html).
+const PRODUCT_VIDEOS = {
+  2: "/videos/airpods-i12-unboxing.mp4",  // Auriculares i12 TWS
+  3: "/videos/watch-9-unboxing.mp4",      // Smartwatch Watch 9 Ultra
+  4: "/videos/kd99-unboxing.mp4",         // Smartwatch KD99 Ultra
+};
 
 PRODUCTS.forEach(p => {
   if (typeof p.stock === "undefined") p.stock = 10;
@@ -1444,6 +1455,16 @@ function showProduct(id){
       ).join("")}</div>`
     : "";
 
+  // Video de unboxing (si este producto tiene uno cargado)
+  const videoSrc = PRODUCT_VIDEOS[p.id];
+  const videoBlock = videoSrc ? `
+    <p class="detail-section-title">Unboxing</p>
+    <video class="detail-video" controls preload="none" poster="${p.image || ""}">
+      <source src="${videoSrc}" type="video/mp4">
+      Tu navegador no puede reproducir este video.
+    </video>
+  ` : "";
+
   detailPanel.innerHTML = `
     <div class="detail-grid">
       <div class="detail-photo-col">
@@ -1462,6 +1483,7 @@ function showProduct(id){
           <p class="detail-section-title">Especificaciones</p>
           <table class="specs-table">${specsRows}</table>
         ` : ""}
+        ${videoBlock}
       </div>
     </div>
   `;
