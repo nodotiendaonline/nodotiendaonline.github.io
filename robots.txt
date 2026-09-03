@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://www.tu-dominio.com/sitemap.xml
+Sitemap: https://nodotiendaonline.github.io/sitemap.xml
