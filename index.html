@@ -231,6 +231,54 @@
   }
   .overlay.open{ opacity:1; pointer-events:auto; }
 
+  /* ---------- Encuesta de origen ---------- */
+  .encuesta-overlay{
+    position:fixed; inset:0; background: rgba(10,15,12,0.65);
+    display:none; align-items:center; justify-content:center;
+    z-index:80; padding:20px; box-sizing:border-box;
+  }
+  .encuesta-overlay.open{ display:flex; }
+  .encuesta-card{
+    background: var(--card); color: var(--ink); border-radius:18px;
+    padding:26px 22px; max-width:340px; width:100%; text-align:center;
+    animation: encuestaPop .2s ease;
+  }
+  @keyframes encuestaPop{
+    from{ transform: scale(0.92); opacity:0; }
+    to{ transform: scale(1); opacity:1; }
+  }
+  .encuesta-card h3{
+    font-family:'Archivo Black', sans-serif; font-size:19px; margin:0 0 6px;
+  }
+  .encuesta-card p{ font-size:13px; color: var(--ink-soft); margin:0 0 18px; }
+  .encuesta-opciones{
+    display:grid; grid-template-columns: 1fr 1fr; gap:9px; margin-bottom:14px;
+  }
+  .encuesta-btn{
+    background: var(--bg); color: var(--card); border:none; border-radius:10px;
+    padding:12px 8px; font-size:13px; font-weight:700; cursor:pointer;
+    font-family:'Inter',sans-serif; transition: transform .12s ease, background .12s ease;
+  }
+  .encuesta-btn:hover{ background: var(--bg-soft); transform: translateY(-1px); }
+  .encuesta-otro-form{
+    display:none; gap:8px; margin-bottom:14px;
+  }
+  .encuesta-otro-form.open{ display:flex; }
+  .encuesta-otro-form input{
+    flex:1; padding:10px 12px; border-radius:8px; border:1px solid rgba(22,36,31,0.2);
+    font-family:'Inter',sans-serif; font-size:13px; background:#fff; color: var(--ink);
+  }
+  .encuesta-otro-enviar{
+    background: var(--yellow); color: var(--ink); border:none; border-radius:8px;
+    padding:10px 14px; font-weight:700; font-size:13px; cursor:pointer;
+    font-family:'Inter',sans-serif;
+  }
+  .encuesta-cerrar{
+    background:none; border:none; color: var(--ink-soft); font-size:12px;
+    text-decoration:underline; cursor:pointer; font-family:'Inter',sans-serif;
+  }
+  body.light-mode .encuesta-btn{ background: var(--ink); }
+
   .drawer{
     position:fixed; top:0; right:0; height:100%;
     width: min(400px, 100%);
@@ -538,6 +586,25 @@
     background:transparent; color: var(--ink); font-size:13px; cursor:pointer; font-family:'Inter',sans-serif;
   }
   .admin-tab.active{ background: var(--ink); color: var(--card); border-color: var(--ink); }
+
+  .encuesta-fila{ margin-bottom:14px; }
+  .encuesta-fila-top{
+    display:flex; justify-content:space-between; font-size:13.5px; margin-bottom:5px;
+  }
+  .encuesta-barra-fondo{
+    background: rgba(22,36,31,0.1); border-radius:999px; height:10px; overflow:hidden;
+  }
+  .encuesta-barra{
+    background: var(--yellow); height:100%; border-radius:999px;
+    transition: width .3s ease;
+  }
+  .admin-sub-title{
+    font-size:12.5px; font-weight:700; text-transform:uppercase; letter-spacing:.4px;
+    margin:22px 0 8px; color: var(--ink-soft);
+  }
+  .encuesta-otros-lista{ margin:0; padding-left:18px; font-size:13px; }
+  .encuesta-otros-lista li{ margin-bottom:6px; }
+  .admin-sub-loading{ font-size:13px; color: var(--ink-soft); }
   .admin-product-row{
     display:flex; align-items:center; gap:12px; padding:12px 0;
     border-bottom:1px dashed rgba(22,36,31,0.15);
@@ -639,6 +706,26 @@
 </main>
 
 <footer>© NODO — <a href="#/admin" style="color:inherit;">admin</a></footer>
+
+<div class="encuesta-overlay" id="encuestaOverlay">
+  <div class="encuesta-card">
+    <h3>¿Cómo nos encontraste?</h3>
+    <p>Nos ayuda un montón saberlo 🙂</p>
+    <div class="encuesta-opciones" id="encuestaOpciones">
+      <button class="encuesta-btn" data-origen="Instagram">📸 Instagram</button>
+      <button class="encuesta-btn" data-origen="TikTok">🎵 TikTok</button>
+      <button class="encuesta-btn" data-origen="Google">🔍 Google</button>
+      <button class="encuesta-btn" data-origen="Un amigo">👥 Un amigo</button>
+      <button class="encuesta-btn" data-origen="IA">🤖 IA (ChatGPT, etc)</button>
+      <button class="encuesta-btn" id="encuestaOtroBtn">✨ Otro</button>
+    </div>
+    <div class="encuesta-otro-form" id="encuestaOtroForm">
+      <input type="text" id="encuestaOtroInput" placeholder="Contanos dónde..." maxlength="60">
+      <button class="encuesta-otro-enviar" id="encuestaOtroEnviar">Enviar</button>
+    </div>
+    <button class="encuesta-cerrar" id="encuestaCerrar">No quiero responder</button>
+  </div>
+</div>
 
 <div class="overlay" id="overlay"></div>
 
@@ -1718,6 +1805,7 @@ function renderAdminPanel(){
       <div class="admin-tabs">
         <button class="admin-tab ${adminTab === "stock" ? "active" : ""}" id="tabStockBtn">Precio y stock</button>
         <button class="admin-tab ${adminTab === "add" ? "active" : ""}" id="tabAddBtn">Agregar producto</button>
+        <button class="admin-tab ${adminTab === "encuestas" ? "active" : ""}" id="tabEncuestasBtn">Encuestas</button>
       </div>
       <div id="adminTabContent"></div>
     </div>
@@ -1725,8 +1813,10 @@ function renderAdminPanel(){
   document.getElementById("adminLogoutBtn").addEventListener("click", adminLogout);
   document.getElementById("tabStockBtn").addEventListener("click", () => { adminTab = "stock"; renderAdminPanel(); });
   document.getElementById("tabAddBtn").addEventListener("click", () => { adminTab = "add"; renderAdminPanel(); });
+  document.getElementById("tabEncuestasBtn").addEventListener("click", () => { adminTab = "encuestas"; renderAdminPanel(); });
 
   if (adminTab === "add") renderAdminAddTab();
+  else if (adminTab === "encuestas") renderAdminEncuestasTab();
   else renderAdminStockTab();
 }
 
@@ -1791,6 +1881,71 @@ function renderAdminStockTab(){
       }
       renderAdminStockTab();
     });
+  });
+}
+
+function renderAdminEncuestasTab(){
+  const content = document.getElementById("adminTabContent");
+
+  if (!firebaseReady){
+    content.innerHTML = `<p class="admin-error">Necesitás tener Firebase conectado para ver las encuestas.</p>`;
+    return;
+  }
+
+  content.innerHTML = `<p class="admin-sub-loading">Cargando respuestas...</p>`;
+
+  db.collection("encuestas").get().then(snapshot => {
+    const conteo = { "Instagram": 0, "TikTok": 0, "Google": 0, "Un amigo": 0, "IA": 0, "Otro": 0 };
+    const otrosDetalle = [];
+
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      const origen = data.origen || "";
+      if (conteo.hasOwnProperty(origen)) {
+        conteo[origen]++;
+      } else if (origen.startsWith("Otro")) {
+        conteo["Otro"]++;
+        if (origen.includes(":")) otrosDetalle.push(origen.split(":").slice(1).join(":").trim());
+      }
+    });
+
+    const total = snapshot.size;
+    const iconos = { "Instagram": "📸", "TikTok": "🎵", "Google": "🔍", "Un amigo": "👥", "IA": "🤖", "Otro": "✨" };
+
+    let filasHtml = "";
+    Object.keys(conteo).forEach(origen => {
+      const cantidad = conteo[origen];
+      const porcentaje = total > 0 ? Math.round((cantidad / total) * 100) : 0;
+      filasHtml += `
+        <div class="encuesta-fila">
+          <div class="encuesta-fila-top">
+            <span>${iconos[origen]} ${origen}</span>
+            <span>${cantidad} (${porcentaje}%)</span>
+          </div>
+          <div class="encuesta-barra-fondo">
+            <div class="encuesta-barra" style="width:${porcentaje}%;"></div>
+          </div>
+        </div>
+      `;
+    });
+
+    let detalleHtml = "";
+    if (otrosDetalle.length > 0){
+      detalleHtml = `
+        <p class="admin-sub-title">Respuestas de "Otro"</p>
+        <ul class="encuesta-otros-lista">
+          ${otrosDetalle.slice(-15).reverse().map(t => `<li>${t}</li>`).join("")}
+        </ul>
+      `;
+    }
+
+    content.innerHTML = `
+      <p class="admin-sub" style="margin-bottom:14px;">Total de respuestas: <strong>${total}</strong></p>
+      ${filasHtml}
+      ${detalleHtml}
+    `;
+  }).catch(err => {
+    content.innerHTML = `<p class="admin-error">No se pudieron cargar las encuestas (${err.code || err.message}).</p>`;
   });
 }
 
@@ -1949,6 +2104,69 @@ subscribeToCloudOverrides();
 subscribeToCloudProducts();
 subscribeToCloudDeletions();
 route();
+
+/* ---------- Encuesta de origen ("¿Cómo nos encontraste?") ----------
+   Se muestra una sola vez por navegador (para siempre), guardada en
+   localStorage. La respuesta (si contesta) se guarda en Firebase para
+   que puedas verla vos, junto con productos/stock. */
+const ENCUESTA_KEY = "nodo_encuesta_mostrada";
+
+function mostrarEncuestaSiCorresponde(){
+  if (localStorage.getItem(ENCUESTA_KEY)) return; // ya se le mostró antes
+  setTimeout(() => {
+    const overlay = document.getElementById("encuestaOverlay");
+    if (overlay) overlay.classList.add("open");
+  }, 1800);
+}
+
+function cerrarEncuesta(){
+  const overlay = document.getElementById("encuestaOverlay");
+  if (overlay) overlay.classList.remove("open");
+  try { localStorage.setItem(ENCUESTA_KEY, "1"); } catch(e){}
+}
+
+function guardarRespuestaEncuesta(origen){
+  cerrarEncuesta();
+  if (!firebaseReady) return;
+  db.collection("encuestas").add({
+    origen: origen,
+    fecha: Date.now(),
+  }).catch(err => console.warn("No se pudo guardar la respuesta de la encuesta", err));
+}
+
+document.querySelectorAll(".encuesta-btn[data-origen]").forEach(btn => {
+  btn.addEventListener("click", () => guardarRespuestaEncuesta(btn.dataset.origen));
+});
+
+const encuestaOtroBtn = document.getElementById("encuestaOtroBtn");
+const encuestaOtroForm = document.getElementById("encuestaOtroForm");
+const encuestaOtroInput = document.getElementById("encuestaOtroInput");
+const encuestaOtroEnviar = document.getElementById("encuestaOtroEnviar");
+const encuestaOpciones = document.getElementById("encuestaOpciones");
+
+if (encuestaOtroBtn) {
+  encuestaOtroBtn.addEventListener("click", () => {
+    encuestaOpciones.style.display = "none";
+    encuestaOtroForm.classList.add("open");
+    encuestaOtroInput.focus();
+  });
+}
+if (encuestaOtroEnviar) {
+  encuestaOtroEnviar.addEventListener("click", () => {
+    const texto = encuestaOtroInput.value.trim();
+    guardarRespuestaEncuesta(texto ? `Otro: ${texto}` : "Otro");
+  });
+}
+if (encuestaOtroInput) {
+  encuestaOtroInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") encuestaOtroEnviar.click();
+  });
+}
+
+const encuestaCerrarBtn = document.getElementById("encuestaCerrar");
+if (encuestaCerrarBtn) encuestaCerrarBtn.addEventListener("click", cerrarEncuesta);
+
+mostrarEncuestaSiCorresponde();
 </script>
 
 </body>
