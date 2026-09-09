@@ -92,9 +92,22 @@
   }
   a{color:inherit;}
 
+  /* ---------- Barra de admin (arriba de todo) ---------- */
+  .admin-topbar{
+    background: #0e1a15; text-align:right; padding:6px 16px;
+    position: sticky; top:0; z-index:41;
+  }
+  .admin-topbar a{
+    color: var(--yellow); font-size:11.5px; font-family:'Inter',sans-serif;
+    text-decoration:none; font-weight:700; letter-spacing:.3px;
+  }
+  .admin-topbar a:hover{ text-decoration:underline; }
+  body.light-mode .admin-topbar{ background:#e9e2cf; }
+  body.light-mode .admin-topbar a{ color:#8A5E10; }
+
   /* ---------- Header ---------- */
   header{
-    position: sticky; top:0; z-index: 40;
+    position: sticky; top:28px; z-index: 40;
     background: var(--bg);
     border-bottom: 1px solid var(--line);
     padding: 18px 24px;
@@ -645,6 +658,8 @@
 </head>
 <body>
 
+<div class="admin-topbar"><a href="#/admin">Admin</a></div>
+
 <header>
   <div class="header-inner">
     <div class="brand">
@@ -705,7 +720,7 @@
   <div class="admin-wrap" id="adminWrap"></div>
 </main>
 
-<footer>© NODO — <a href="#/admin" style="color:inherit;">admin</a></footer>
+<footer>© NODO</footer>
 
 <div class="encuesta-overlay" id="encuestaOverlay">
   <div class="encuesta-card">
