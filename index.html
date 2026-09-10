@@ -187,6 +187,21 @@
   .no-results{
     margin: 40px 0; color:#B9C6BE; font-size:15px; text-align:center;
   }
+  .pagination{
+    display:flex; align-items:center; justify-content:center; gap:16px;
+    margin: 28px 0 10px;
+  }
+  .page-btn{
+    background: var(--card); color: var(--ink);
+    border: 1px solid rgba(22,36,31,0.25);
+    border-radius: 8px; padding: 9px 16px;
+    font-size: 13px; font-weight:700; cursor:pointer;
+    font-family:'Inter',sans-serif;
+    transition: background .15s ease, opacity .15s ease;
+  }
+  .page-btn:hover:not(:disabled){ background: rgba(244,182,63,0.18); }
+  .page-btn:disabled{ opacity:0.35; cursor:not-allowed; }
+  .page-indicator{ font-size:13px; color: var(--ink-soft); font-family:'Space Mono', monospace; }
   .grid{
     display:grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -710,6 +725,11 @@
   </div>
   <div class="grid" id="grid"></div>
   <p class="no-results" id="noResults" style="display:none;">No encontramos productos con esa búsqueda. Probá con otra palabra.</p>
+  <div class="pagination" id="pagination" style="display:none;">
+    <button class="page-btn" id="prevPageBtn" type="button">← Anterior</button>
+    <span class="page-indicator" id="pageIndicator"></span>
+    <button class="page-btn" id="nextPageBtn" type="button">Siguiente →</button>
+  </div>
 </main>
 
 <main id="productView">
@@ -1373,6 +1393,7 @@ const SEARCH_SYNONYMS = {
   reloj: ["smartwatch", "watch", "reloj", "relojes", "inteligente"],
   auriculares: ["auriculares", "audifonos", "audífonos", "airpods", "earbuds", "cascos", "tws"],
   mate: ["mate", "mates", "matera", "termo", "bombilla"],
+  iluminacion: ["luz", "luces", "led", "iluminacion", "iluminación", "lampara", "lámpara", "aro de luz", "ring light", "streaming", "decorativa", "ambiente"],
 };
 
 function normalize(str){
@@ -1411,6 +1432,36 @@ let currentQuery = "";
 let currentCategory = "all";
 let currentSort = "relevance";
 let onlyInStock = false;
+let currentPage = 1;
+const ROWS_PER_PAGE = 3; // cuántas filas se muestran por página, sea cual sea el ancho de pantalla
+
+// Detecta cuántas columnas está mostrando el grid en este momento (1 en
+// celular, 2/3/4 en pantallas más anchas), leyendo el layout real que
+// calculó el CSS (grid-template-columns), sin necesidad de "adivinar"
+// el ancho de pantalla a mano.
+function getGridColumns(){
+  const gridEl = document.getElementById("grid");
+  if (!gridEl) return 1;
+  const raw = getComputedStyle(gridEl).gridTemplateColumns;
+  const parts = raw.split(" ").filter(Boolean);
+  // Caso normal: el navegador ya resolvió "repeat(auto-fill, ...)" a una
+  // lista de anchos en píxeles (uno por columna real que entra en pantalla).
+  if (parts.length > 1 && parts.every(p => /px$/.test(p))) {
+    return parts.length;
+  }
+  // Respaldo (por si el navegador todavía no resolvió el grid, p. ej.
+  // el grid está oculto): calculamos a mano cuántas columnas de 220px
+  // entran, igual que hace el CSS con minmax(220px, 1fr).
+  const containerWidth = gridEl.clientWidth || window.innerWidth || 320;
+  const gap = 20;
+  const minCard = 220;
+  return Math.max(1, Math.floor((containerWidth + gap) / (minCard + gap)));
+}
+
+function resetPageAndRenderGrid(){
+  currentPage = 1;
+  renderGrid();
+}
 
 function getFilteredProducts(){
   let list = PRODUCTS.filter(p =>
@@ -1453,6 +1504,7 @@ function renderCategoryChips(){
     chip.addEventListener("click", () => {
       currentCategory = chip.dataset.cat;
       renderCategoryChips();
+      currentPage = 1;
       renderGrid();
     });
   });
@@ -1472,7 +1524,19 @@ function renderGrid(){
   grid.style.display = filtered.length === 0 ? "none" : "";
   updateProductSchema();
 
-  grid.innerHTML = filtered.map(p => `
+  // Paginado: en vez de tirar todos los resultados en una sola lista
+  // infinita, los cortamos en "páginas" según cuántas columnas entran
+  // en la pantalla (1 en celular, más en pantallas anchas), para que
+  // cada página muestre más o menos la misma cantidad de filas.
+  const columns = getGridColumns();
+  const itemsPerPage = Math.max(columns * ROWS_PER_PAGE, columns);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+  if (currentPage > totalPages) currentPage = totalPages;
+  if (currentPage < 1) currentPage = 1;
+  const start = (currentPage - 1) * itemsPerPage;
+  const pageItems = filtered.slice(start, start + itemsPerPage);
+
+  grid.innerHTML = pageItems.map(p => `
     <div class="card" data-id="${p.id}">
       <div class="card-photo">${p.image ? `<img src="${p.image}" alt="${p.name}"${p.imageZoom ? ` style="transform:scale(${p.imageZoom})"` : ""}>` : p.art}</div>
       ${stockBadge(p)}
@@ -1487,6 +1551,17 @@ function renderGrid(){
       </div>
     </div>
   `).join("");
+
+  const paginationEl = document.getElementById("pagination");
+  const prevBtn = document.getElementById("prevPageBtn");
+  const nextBtn = document.getElementById("nextPageBtn");
+  const pageIndicatorEl = document.getElementById("pageIndicator");
+  if (paginationEl) {
+    paginationEl.style.display = (filtered.length === 0 || totalPages <= 1) ? "none" : "flex";
+    if (pageIndicatorEl) pageIndicatorEl.textContent = `Página ${currentPage} de ${totalPages}`;
+    if (prevBtn) prevBtn.disabled = currentPage <= 1;
+    if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
+  }
 
   grid.querySelectorAll(".card").forEach(card => {
     card.addEventListener("click", () => {
@@ -1716,6 +1791,7 @@ const searchInputEl = document.getElementById("searchInput");
 if (searchInputEl){
   searchInputEl.addEventListener("input", (e) => {
     currentQuery = e.target.value;
+    currentPage = 1;
     renderGrid();
   });
 }
@@ -1724,6 +1800,7 @@ const sortSelectEl = document.getElementById("sortSelect");
 if (sortSelectEl){
   sortSelectEl.addEventListener("change", (e) => {
     currentSort = e.target.value;
+    currentPage = 1;
     renderGrid();
   });
 }
@@ -1732,9 +1809,43 @@ const onlyStockChkEl = document.getElementById("onlyStockChk");
 if (onlyStockChkEl){
   onlyStockChkEl.addEventListener("change", (e) => {
     onlyInStock = e.target.checked;
+    currentPage = 1;
     renderGrid();
   });
 }
+
+// Botones de paginado (Anterior / Siguiente): al cambiar de página,
+// además scrolleamos hasta arriba del catálogo para que se vea bien
+// en celular (si no, quedás mirando el medio de la página siguiente).
+const prevPageBtnEl = document.getElementById("prevPageBtn");
+if (prevPageBtnEl){
+  prevPageBtnEl.addEventListener("click", () => {
+    if (currentPage <= 1) return;
+    currentPage -= 1;
+    renderGrid();
+    grid.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+
+const nextPageBtnEl = document.getElementById("nextPageBtn");
+if (nextPageBtnEl){
+  nextPageBtnEl.addEventListener("click", () => {
+    currentPage += 1;
+    renderGrid();
+    grid.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+
+// Si cambia el ancho de pantalla (girás el celular, achicás la ventana
+// en la compu, etc.), recalculamos cuántas columnas entran y ajustamos
+// el paginado en consecuencia.
+let resizeTimeout;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimeout);
+  resizeTimeout = setTimeout(() => {
+    if (location.hash === "" || location.hash === "#") renderGrid();
+  }, 200);
+});
 
 /* ---------- Cartel de sin conexión ---------- */
 const offlineBanner = document.getElementById("offlineBanner");
