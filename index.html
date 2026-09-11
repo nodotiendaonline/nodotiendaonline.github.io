@@ -671,6 +671,14 @@
     border:1px solid rgba(22,36,31,0.15);
   }
 </style>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-S1MYMXHMHM"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-S1MYMXHMHM');
+  </script>
 </head>
 <body>
 
@@ -1433,7 +1441,8 @@ let currentCategory = "all";
 let currentSort = "relevance";
 let onlyInStock = false;
 let currentPage = 1;
-const ROWS_PER_PAGE = 3; // cuántas filas se muestran por página, sea cual sea el ancho de pantalla
+const ROWS_PER_PAGE = 3; // filas por página en pantallas anchas
+const MIN_ITEMS_PER_PAGE = 10; // piso mínimo, para que en celular (1 columna) no queden solo 3 por página
 
 // Detecta cuántas columnas está mostrando el grid en este momento (1 en
 // celular, 2/3/4 en pantallas más anchas), leyendo el layout real que
@@ -1529,7 +1538,7 @@ function renderGrid(){
   // en la pantalla (1 en celular, más en pantallas anchas), para que
   // cada página muestre más o menos la misma cantidad de filas.
   const columns = getGridColumns();
-  const itemsPerPage = Math.max(columns * ROWS_PER_PAGE, columns);
+  const itemsPerPage = Math.max(columns * ROWS_PER_PAGE, MIN_ITEMS_PER_PAGE);
   const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
   if (currentPage > totalPages) currentPage = totalPages;
   if (currentPage < 1) currentPage = 1;
