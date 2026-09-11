@@ -253,6 +253,41 @@
   .consult-btn{ background:#25D366; white-space:nowrap; font-size:11.5px; padding:8px 10px; }
   .consult-btn:hover{ background:#1EBE5A; }
 
+  /* En pantallas chicas (celular) forzamos 4 columnas achicando todo,
+     en vez de dejar 1 sola columna gigante como hacía el auto-fill. */
+  @media (max-width: 640px){
+    .grid{
+      grid-template-columns: repeat(4, 1fr);
+      gap: 7px;
+    }
+    .card{
+      padding: 6px;
+      gap: 5px;
+      border-radius: 10px;
+    }
+    .card::before{
+      top: 6px; left: 6px; width:6px; height:6px;
+    }
+    .card-photo{ border-radius: 6px; }
+    .card-photo img{ padding: 3px; }
+    .card-photo svg{ width:70%; height:70%; }
+    .card h3{
+      font-size: 9.5px; line-height:1.2; margin: 2px 0 0;
+      display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+    }
+    .card .desc{ display:none; } /* no entra texto de descripción en una tarjeta tan chica */
+    .stock-badge{ font-size:8px; padding:2px 6px; }
+    .price-row{
+      flex-direction:column; align-items:flex-start; gap:5px;
+      margin-top:2px; padding-top:6px;
+    }
+    .price{ font-size:11px; }
+    .add-btn{
+      font-size:9px; padding:5px 4px; width:100%; text-align:center; border-radius:6px;
+    }
+    .consult-btn{ font-size:8px; padding:5px 3px; white-space:normal; line-height:1.15; }
+  }
+
   /* ---------- Cart drawer ---------- */
   .overlay{
     position:fixed; inset:0; background: rgba(10,15,12,0.55);
@@ -1434,35 +1469,12 @@ let currentCategory = "all";
 let currentSort = "relevance";
 let onlyInStock = false;
 let currentPage = 1;
-const ROWS_PER_PAGE = 3; // filas por página en pantallas anchas
-const MIN_ITEMS_PER_PAGE = 10; // piso mínimo, para que en celular (1 columna) no queden solo 3 por página
-
-// Detecta cuántas columnas está mostrando el grid en este momento (1 en
-// celular, 2/3/4 en pantallas más anchas), leyendo el layout real que
-// calculó el CSS (grid-template-columns), sin necesidad de "adivinar"
-// el ancho de pantalla a mano.
-function getGridColumns(){
-  const gridEl = document.getElementById("grid");
-  if (!gridEl) return 1;
-  const raw = getComputedStyle(gridEl).gridTemplateColumns;
-  const parts = raw.split(" ").filter(Boolean);
-  // Caso normal: el navegador ya resolvió "repeat(auto-fill, ...)" a una
-  // lista de anchos en píxeles (uno por columna real que entra en pantalla).
-  if (parts.length > 1 && parts.every(p => /px$/.test(p))) {
-    return parts.length;
-  }
-  // Respaldo (por si el navegador todavía no resolvió el grid, p. ej.
-  // el grid está oculto): calculamos a mano cuántas columnas de 220px
-  // entran, igual que hace el CSS con minmax(220px, 1fr).
-  const containerWidth = gridEl.clientWidth || window.innerWidth || 320;
-  const gap = 20;
-  const minCard = 220;
-  return Math.max(1, Math.floor((containerWidth + gap) / (minCard + gap)));
-}
+const ITEMS_PER_PAGE = 40; // cantidad fija de productos por página antes de mostrar "Siguiente"
 
 function resetPageAndRenderGrid(){
   currentPage = 1;
   renderGrid();
+
 }
 
 function getFilteredProducts(){
@@ -1527,11 +1539,8 @@ function renderGrid(){
   updateProductSchema();
 
   // Paginado: en vez de tirar todos los resultados en una sola lista
-  // infinita, los cortamos en "páginas" según cuántas columnas entran
-  // en la pantalla (1 en celular, más en pantallas anchas), para que
-  // cada página muestre más o menos la misma cantidad de filas.
-  const columns = getGridColumns();
-  const itemsPerPage = Math.max(columns * ROWS_PER_PAGE, MIN_ITEMS_PER_PAGE);
+  // infinita, los cortamos en "páginas" de tamaño fijo.
+  const itemsPerPage = ITEMS_PER_PAGE;
   const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
   if (currentPage > totalPages) currentPage = totalPages;
   if (currentPage < 1) currentPage = 1;
@@ -1837,17 +1846,6 @@ if (nextPageBtnEl){
     grid.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 }
-
-// Si cambia el ancho de pantalla (girás el celular, achicás la ventana
-// en la compu, etc.), recalculamos cuántas columnas entran y ajustamos
-// el paginado en consecuencia.
-let resizeTimeout;
-window.addEventListener("resize", () => {
-  clearTimeout(resizeTimeout);
-  resizeTimeout = setTimeout(() => {
-    if (location.hash === "" || location.hash === "#") renderGrid();
-  }, 200);
-});
 
 /* ---------- Cartel de sin conexión ---------- */
 const offlineBanner = document.getElementById("offlineBanner");
