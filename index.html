@@ -699,6 +699,31 @@
   }
   .del-btn:hover{ background: rgba(226,83,43,0.1); }
   .del-btn:disabled{ opacity:0.6; cursor:not-allowed; }
+
+  /* Gráfico de barras simple para las visitas del mes en el panel de Admin */
+  .visitas-chart{
+    display:flex; align-items:flex-end; gap:4px;
+    height:140px; margin:10px 0 6px; padding-bottom:2px;
+    overflow-x:auto;
+  }
+  .visitas-bar-wrap{
+    display:flex; flex-direction:column; align-items:center; justify-content:flex-end;
+    flex:1 0 auto; min-width:16px; height:100%;
+  }
+  .visitas-bar{
+    width:100%; max-width:20px; background: var(--yellow);
+    border-radius:3px 3px 0 0; min-height:3px;
+  }
+  .visitas-bar-label{ font-size:9px; color: var(--ink-soft); margin-top:4px; }
+
+  /* En pantallas chicas, dejamos que la fila del admin (foto, precio,
+     stock, eliminar) se acomode en más de una línea en vez de
+     desbordarse hacia afuera de la tarjeta. */
+  @media (max-width: 600px){
+    .admin-product-row{ flex-wrap: wrap; }
+    .admin-edit-fields{ flex: 1 1 auto; justify-content: flex-start; }
+    .del-btn{ margin-left: auto; }
+  }
   .specs-row{ display:flex; gap:8px; margin-bottom:8px; }
   .specs-row input{ flex:1; }
   .specs-row button{
@@ -1055,8 +1080,8 @@ const PRODUCTS = [
     category: "Tecnologia",
     desc: "Teclado gamer retroiluminado RGB con teclas suspendidas y diseño compacto, ideal para juegos y uso diario en la compu",
     price: 34999,
-    image: "producto-111.jpg",
-    gallery: ["producto-111_g1.jpg", "producto-111_g2.jpg", "producto-111_g3.jpg"],
+    image: "producto-111_g3.jpg",
+    gallery: ["producto-111.jpg", "producto-111_g1.jpg", "producto-111_g2.jpg"],
     stock: 0
   }
 ];
@@ -2184,40 +2209,52 @@ function renderAdminVisitasTab(){
   Promise.all([totalPromise, diariasPromise]).then(([totalSnap, diariasSnap]) => {
     const total = totalSnap.exists ? (totalSnap.data().views || 0) : 0;
 
-    let dias = [];
+    // Mapa fecha (YYYY-MM-DD) -> visitas, con todo lo que haya en Firestore.
+    const vistasPorFecha = {};
     diariasSnap.forEach(doc => {
       const data = doc.data();
-      dias.push({ fecha: data.fecha || doc.id.replace("daily_", ""), views: data.views || 0 });
+      const fecha = data.fecha || doc.id.replace("daily_", "");
+      vistasPorFecha[fecha] = data.views || 0;
     });
-    dias.sort((a, b) => (a.fecha < b.fecha ? 1 : -1)); // más reciente primero
-    dias = dias.slice(0, 7); // últimos 7 días con datos
+
+    // Armamos los días del mes actual, del 1 hasta hoy, en zona horaria
+    // de Argentina, aunque no haya datos guardados para algún día (esos
+    // quedan en 0). Como se vuelve a pedir a Firestore cada vez que se
+    // abre esta pestaña, el gráfico queda al día solo.
+    const hoyStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" });
+    const [anioStr, mesStr, diaHoyStr] = hoyStr.split("-");
+    const diaHoy = Number(diaHoyStr);
+
+    const dias = [];
+    for (let d = 1; d <= diaHoy; d++){
+      const fecha = `${anioStr}-${mesStr}-${String(d).padStart(2, "0")}`;
+      dias.push({ dia: d, fecha, views: vistasPorFecha[fecha] || 0 });
+    }
 
     const maxViews = Math.max(1, ...dias.map(d => d.views));
+    const nombreMes = new Date(`${anioStr}-${mesStr}-01T12:00:00`).toLocaleDateString("es-AR", { month: "long", timeZone: "America/Argentina/Buenos_Aires" });
 
-    const filasHtml = dias.map(d => {
-      const porcentaje = Math.round((d.views / maxViews) * 100);
+    const barrasHtml = dias.map(d => {
+      const alturaPct = Math.max(3, Math.round((d.views / maxViews) * 100)); // piso de 3% para que se note aunque sea 0
       return `
-        <div class="encuesta-fila">
-          <div class="encuesta-fila-top">
-            <span>${d.fecha}</span>
-            <span>${d.views} ${d.views === 1 ? "visita" : "visitas"}</span>
-          </div>
-          <div class="encuesta-barra-fondo">
-            <div class="encuesta-barra" style="width:${porcentaje}%;"></div>
-          </div>
+        <div class="visitas-bar-wrap" title="Día ${d.dia}: ${d.views} ${d.views === 1 ? "visita" : "visitas"}">
+          <div class="visitas-bar" style="height:${alturaPct}%;"></div>
+          <span class="visitas-bar-label">${d.dia}</span>
         </div>
       `;
     }).join("");
 
+    const totalMes = dias.reduce((sum, d) => sum + d.views, 0);
+
     content.innerHTML = `
-      <p class="admin-sub" style="margin-bottom:14px;">Visitas totales (desde siempre): <strong>${total}</strong></p>
-      ${dias.length > 0
-        ? `<p class="admin-sub-title">Últimos días</p>${filasHtml}`
-        : `<p class="admin-sub">Todavía no hay visitas registradas por día.</p>`
-      }
+      <p class="admin-sub" style="margin-bottom:4px;">Visitas totales (desde siempre): <strong>${total}</strong></p>
+      <p class="admin-sub" style="margin-bottom:14px;">Este mes (${nombreMes}): <strong>${totalMes}</strong></p>
+      <p class="admin-sub-title" style="text-transform:capitalize;">${nombreMes}, día por día</p>
+      <div class="visitas-chart">${barrasHtml}</div>
       <p class="admin-sub" style="margin-top:14px; font-size:12px; color: var(--ink-soft);">
         Este contador es propio de la tienda (no depende de Google Analytics), así que siempre funciona.
-        No cuenta tus propias visitas al panel de Admin.
+        No cuenta tus propias visitas al panel de Admin ni las de tus dispositivos ya identificados.
+        Se actualiza solo cada vez que abrís esta pestaña.
       </p>
     `;
   }).catch(err => {
