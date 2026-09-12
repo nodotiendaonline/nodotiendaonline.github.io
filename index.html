@@ -2190,6 +2190,35 @@ function renderAdminEncuestasTab(){
 // Pestaña "Visitas": muestra el total histórico y los últimos días,
 // usando el contador propio guardado en Firestore (independiente de
 // Google Analytics, para que funcione siempre, sin bloqueos de red).
+// Pone el contador total en 0 y borra todos los días guardados hasta
+// ahora. Se usa desde el botón "Reiniciar contador de visitas".
+function resetVisitCounter(){
+  const msg = document.getElementById("resetVisitasMsg");
+  const btn = document.getElementById("resetVisitasBtn");
+  if (btn) btn.disabled = true;
+
+  db.collection("analytics")
+    .where(firebase.firestore.FieldPath.documentId(), ">=", "daily_")
+    .where(firebase.firestore.FieldPath.documentId(), "<=", "daily_\uf8ff")
+    .get()
+    .then(snap => {
+      const batch = db.batch();
+      snap.forEach(doc => batch.delete(doc.ref));
+      batch.set(db.collection("analytics").doc("total"), { views: 0 });
+      return batch.commit();
+    })
+    .then(() => {
+      renderAdminVisitasTab(); // recargamos la pestaña ya en 0
+    })
+    .catch(err => {
+      if (btn) btn.disabled = false;
+      if (msg) {
+        msg.style.display = "block";
+        msg.textContent = `No se pudo reiniciar (${err.code || err.message}).`;
+      }
+    });
+}
+
 function renderAdminVisitasTab(){
   const content = document.getElementById("adminTabContent");
 
@@ -2256,7 +2285,17 @@ function renderAdminVisitasTab(){
         No cuenta tus propias visitas al panel de Admin ni las de tus dispositivos ya identificados.
         Se actualiza solo cada vez que abrís esta pestaña.
       </p>
+      <button class="admin-btn" id="resetVisitasBtn" style="margin-top:10px; background:transparent; color: var(--red); border:1px solid rgba(226,83,43,0.4);">
+        Reiniciar contador de visitas
+      </button>
+      <p class="admin-error" id="resetVisitasMsg" style="display:none; margin-top:8px;"></p>
     `;
+
+    document.getElementById("resetVisitasBtn").addEventListener("click", () => {
+      const ok = confirm("¿Seguro que querés poner el contador de visitas en 0? Esto borra el historial de visitas hasta ahora y no se puede deshacer.");
+      if (!ok) return;
+      resetVisitCounter();
+    });
   }).catch(err => {
     content.innerHTML = `<p class="admin-error">No se pudieron cargar las visitas (${err.code || err.message}). Puede que falte agregar la regla de Firestore para la colección "analytics".</p>`;
   });
