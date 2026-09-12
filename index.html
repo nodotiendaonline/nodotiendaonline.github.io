@@ -253,39 +253,39 @@
   .consult-btn{ background:#25D366; white-space:nowrap; font-size:11.5px; padding:8px 10px; }
   .consult-btn:hover{ background:#1EBE5A; }
 
-  /* En pantallas chicas (celular) usamos 3 columnas, con tarjetas
-     compactas pero legibles. */
+  /* En pantallas chicas (celular) usamos 2 columnas, con tarjetas
+     compactas pero todavía cómodas de leer. */
   @media (max-width: 640px){
     .grid{
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
     }
     .card{
-      padding: 8px;
-      gap: 6px;
-      border-radius: 11px;
+      padding: 12px;
+      gap: 8px;
+      border-radius: 12px;
     }
     .card::before{
-      top: 8px; left: 8px; width:7px; height:7px;
+      top: 10px; left: 10px; width:8px; height:8px;
     }
-    .card-photo{ border-radius: 7px; }
-    .card-photo img{ padding: 4px; }
-    .card-photo svg{ width:72%; height:72%; }
+    .card-photo{ border-radius: 8px; }
+    .card-photo img{ padding: 6px; }
+    .card-photo svg{ width:75%; height:75%; }
     .card h3{
-      font-size: 10.5px; line-height:1.25; margin: 2px 0 0;
+      font-size: 13px; line-height:1.25; margin: 2px 0 0;
       display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
     }
-    .card .desc{ font-size: 9.5px; min-height: 22px; }
-    .stock-badge{ font-size:9px; padding:2px 7px; }
+    .card .desc{ font-size: 11px; min-height: 28px; }
+    .stock-badge{ font-size:10px; padding:3px 8px; }
     .price-row{
-      flex-direction:column; align-items:stretch; gap:5px;
-      margin-top:2px; padding-top:7px;
+      flex-direction:column; align-items:stretch; gap:6px;
+      margin-top:2px; padding-top:8px;
     }
-    .price{ font-size:12px; }
+    .price{ font-size:14px; }
     .add-btn{
-      font-size:10px; padding:6px 5px; width:100%; text-align:center; border-radius:6px;
+      font-size:11px; padding:7px 8px; width:100%; text-align:center; border-radius:7px;
     }
-    .consult-btn{ font-size:9px; padding:6px 4px; white-space:normal; line-height:1.15; }
+    .consult-btn{ font-size:10px; padding:7px 6px; white-space:normal; line-height:1.2; }
   }
 
   /* ---------- Cart drawer ---------- */
@@ -1079,6 +1079,28 @@ if (isFirebaseConfigured() && window.firebase){
   } catch(e){ console.warn("No se pudo iniciar Firebase", e); }
 }
 
+// ---------- Contador de visitas propio (sin depender de Google Analytics) ----------
+// Cada vez que alguien entra a la tienda (no al panel de Admin), sumamos 1
+// a un contador total y a un contador del día de hoy en Firestore. Así
+// podés ver cuánta gente entra directamente en el panel de Admin, sin
+// depender de que Google Analytics no esté bloqueado en tu red.
+function trackVisit(){
+  if (!firebaseReady) return;
+  if (location.hash.indexOf("#/admin") === 0) return; // no contamos tus propias visitas al panel
+
+  const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }); // YYYY-MM-DD
+  const inc = firebase.firestore.FieldValue.increment(1);
+
+  db.collection("analytics").doc("total").set(
+    { views: inc }, { merge: true }
+  ).catch(err => console.warn("No se pudo registrar la visita (total)", err));
+
+  db.collection("analytics").doc("daily_" + hoy).set(
+    { views: inc, fecha: hoy }, { merge: true }
+  ).catch(err => console.warn("No se pudo registrar la visita (diaria)", err));
+}
+trackVisit();
+
 // Videos de unboxing: id del producto -> archivo de video (subilo a la
 // carpeta /videos/ de tu hosting, junto al index.html).
 const PRODUCT_VIDEOS = {
@@ -1355,7 +1377,7 @@ async function deleteProductEverywhere(id){
 }
 
 function linkConsultaWhatsapp(p){
-  const msg = `Hola! Quería consultar por "${p.name}", vi que no tiene stock. ¿Cuándo repone?`;
+  const msg = `Hola! Quería consultar por "${p.name}".`;
   return `https://wa.me/${CONFIG.whatsappNumber}?text=${encodeURIComponent(msg)}`;
 }
 
@@ -1969,6 +1991,7 @@ function renderAdminPanel(){
         <button class="admin-tab ${adminTab === "stock" ? "active" : ""}" id="tabStockBtn">Precio y stock</button>
         <button class="admin-tab ${adminTab === "add" ? "active" : ""}" id="tabAddBtn">Agregar producto</button>
         <button class="admin-tab ${adminTab === "encuestas" ? "active" : ""}" id="tabEncuestasBtn">Encuestas</button>
+        <button class="admin-tab ${adminTab === "visitas" ? "active" : ""}" id="tabVisitasBtn">Visitas</button>
       </div>
       <div id="adminTabContent"></div>
     </div>
@@ -1977,9 +2000,11 @@ function renderAdminPanel(){
   document.getElementById("tabStockBtn").addEventListener("click", () => { adminTab = "stock"; renderAdminPanel(); });
   document.getElementById("tabAddBtn").addEventListener("click", () => { adminTab = "add"; renderAdminPanel(); });
   document.getElementById("tabEncuestasBtn").addEventListener("click", () => { adminTab = "encuestas"; renderAdminPanel(); });
+  document.getElementById("tabVisitasBtn").addEventListener("click", () => { adminTab = "visitas"; renderAdminPanel(); });
 
   if (adminTab === "add") renderAdminAddTab();
   else if (adminTab === "encuestas") renderAdminEncuestasTab();
+  else if (adminTab === "visitas") renderAdminVisitasTab();
   else renderAdminStockTab();
 }
 
@@ -2109,6 +2134,69 @@ function renderAdminEncuestasTab(){
     `;
   }).catch(err => {
     content.innerHTML = `<p class="admin-error">No se pudieron cargar las encuestas (${err.code || err.message}).</p>`;
+  });
+}
+
+// Pestaña "Visitas": muestra el total histórico y los últimos días,
+// usando el contador propio guardado en Firestore (independiente de
+// Google Analytics, para que funcione siempre, sin bloqueos de red).
+function renderAdminVisitasTab(){
+  const content = document.getElementById("adminTabContent");
+
+  if (!firebaseReady){
+    content.innerHTML = `<p class="admin-error">Necesitás tener Firebase conectado para ver las visitas.</p>`;
+    return;
+  }
+
+  content.innerHTML = `<p class="admin-sub-loading">Cargando visitas...</p>`;
+
+  const totalPromise = db.collection("analytics").doc("total").get();
+  const diariasPromise = db.collection("analytics")
+    .where(firebase.firestore.FieldPath.documentId(), ">=", "daily_")
+    .where(firebase.firestore.FieldPath.documentId(), "<=", "daily_\uf8ff")
+    .get();
+
+  Promise.all([totalPromise, diariasPromise]).then(([totalSnap, diariasSnap]) => {
+    const total = totalSnap.exists ? (totalSnap.data().views || 0) : 0;
+
+    let dias = [];
+    diariasSnap.forEach(doc => {
+      const data = doc.data();
+      dias.push({ fecha: data.fecha || doc.id.replace("daily_", ""), views: data.views || 0 });
+    });
+    dias.sort((a, b) => (a.fecha < b.fecha ? 1 : -1)); // más reciente primero
+    dias = dias.slice(0, 7); // últimos 7 días con datos
+
+    const maxViews = Math.max(1, ...dias.map(d => d.views));
+
+    const filasHtml = dias.map(d => {
+      const porcentaje = Math.round((d.views / maxViews) * 100);
+      return `
+        <div class="encuesta-fila">
+          <div class="encuesta-fila-top">
+            <span>${d.fecha}</span>
+            <span>${d.views} ${d.views === 1 ? "visita" : "visitas"}</span>
+          </div>
+          <div class="encuesta-barra-fondo">
+            <div class="encuesta-barra" style="width:${porcentaje}%;"></div>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    content.innerHTML = `
+      <p class="admin-sub" style="margin-bottom:14px;">Visitas totales (desde siempre): <strong>${total}</strong></p>
+      ${dias.length > 0
+        ? `<p class="admin-sub-title">Últimos días</p>${filasHtml}`
+        : `<p class="admin-sub">Todavía no hay visitas registradas por día.</p>`
+      }
+      <p class="admin-sub" style="margin-top:14px; font-size:12px; color: var(--ink-soft);">
+        Este contador es propio de la tienda (no depende de Google Analytics), así que siempre funciona.
+        No cuenta tus propias visitas al panel de Admin.
+      </p>
+    `;
+  }).catch(err => {
+    content.innerHTML = `<p class="admin-error">No se pudieron cargar las visitas (${err.code || err.message}). Puede que falte agregar la regla de Firestore para la colección "analytics".</p>`;
   });
 }
 
