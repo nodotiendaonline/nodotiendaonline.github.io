@@ -777,10 +777,6 @@
   </div>
   <div class="category-chips" id="categoryChips"></div>
   <div class="filters-row">
-    <label class="filter-check">
-      <input type="checkbox" id="onlyStockChk">
-      Solo con stock
-    </label>
     <select id="sortSelect" class="sort-select">
       <option value="relevance">Ordenar: Relevancia</option>
       <option value="price-asc">Precio: menor a mayor</option>
@@ -1552,7 +1548,6 @@ function matchesQuery(p, rawQuery){
 let currentQuery = "";
 let currentCategory = "all";
 let currentSort = "relevance";
-let onlyInStock = false;
 let currentPage = 1;
 const ITEMS_PER_PAGE = 40; // cantidad fija de productos por página antes de mostrar "Siguiente"
 
@@ -1565,8 +1560,7 @@ function resetPageAndRenderGrid(){
 function getFilteredProducts(){
   let list = PRODUCTS.filter(p =>
     (currentCategory === "all" || p.category === currentCategory) &&
-    matchesQuery(p, currentQuery) &&
-    (!onlyInStock || (p.stock ?? 0) > 0)
+    matchesQuery(p, currentQuery)
   );
 
   switch (currentSort){
@@ -1891,15 +1885,6 @@ const sortSelectEl = document.getElementById("sortSelect");
 if (sortSelectEl){
   sortSelectEl.addEventListener("change", (e) => {
     currentSort = e.target.value;
-    currentPage = 1;
-    renderGrid();
-  });
-}
-
-const onlyStockChkEl = document.getElementById("onlyStockChk");
-if (onlyStockChkEl){
-  onlyStockChkEl.addEventListener("change", (e) => {
-    onlyInStock = e.target.checked;
     currentPage = 1;
     renderGrid();
   });
