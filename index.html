@@ -279,7 +279,7 @@
     .stock-badge{ font-size:10px; padding:3px 8px; }
     .price-row{
       flex-direction:column; align-items:stretch; gap:6px;
-      margin-top:2px; padding-top:8px;
+      margin-top:auto; padding-top:8px;
     }
     .price{ font-size:14px; }
     .add-btn{
@@ -1585,11 +1585,20 @@ function resetPageAndRenderGrid(){
 
 }
 
+// Categorías "amplias": al filtrar por Electrónica, también entran otras
+// categorías más específicas que en el fondo son productos electrónicos
+// (relojes, teclados, micrófonos, etc.), para no obligar al cliente a
+// saber la subcategoría exacta.
+const CATEGORY_GROUPS = {
+  "Electrónica": ["Electrónica", "Smartwatches", "Tecnologia"],
+};
+
 function getFilteredProducts(){
-  let list = PRODUCTS.filter(p =>
-    (currentCategory === "all" || p.category === currentCategory) &&
-    matchesQuery(p, currentQuery)
-  );
+  let list = PRODUCTS.filter(p => {
+    if (currentCategory === "all") return true;
+    const allowed = CATEGORY_GROUPS[currentCategory] || [currentCategory];
+    return allowed.includes(p.category);
+  }).filter(p => matchesQuery(p, currentQuery));
 
   switch (currentSort){
     case "price-asc":
